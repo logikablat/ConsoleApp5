@@ -1,12 +1,18 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using Newtonsoft.Json;
 using MySql.Data.MySqlClient;
+using Newtonsoft.Json;
+
 
 namespace LogReader
 {
+    public class LogData
+    {
+        public int Id { get; set; }
+        public string Ip { get; set; }
+        public DateTime DateTime { get; set; }
+        public string Method { get; set; }
+        public string URL { get; set; }
+    }
+
     class Program
     {
         private MySqlConnection connection;
@@ -28,6 +34,7 @@ namespace LogReader
             Console.WriteLine("2. Вход в систему");
             Console.WriteLine("3. Экспорт данных в формате JSON");
             Console.WriteLine("4. Просмотр данных в БД");
+            Console.WriteLine("5. Просмотр данных в БД по айпи");
 
             Console.Write("Введите номер действия: ");
             string input = Console.ReadLine();
@@ -46,6 +53,11 @@ namespace LogReader
                 case "4":
                     ViewDataInDatabase();
                     break;
+                case "5":
+                    Console.WriteLine("Укажите IP, по которому хотите вывести лог");
+                    string ipAddress = Console.ReadLine();
+                    ViewDataByIP(ipAddress);
+                    break;
                 default:
                     Console.WriteLine("Неверный ввод.");
                     break;
@@ -54,44 +66,51 @@ namespace LogReader
 
         public void RegisterUser()
         {
-            Console.WriteLine("Метод регистрации пользователя.");
-
-            Console.Write("Введите имя пользователя: ");
-            string username = Console.ReadLine();
-
-            Console.Write("Введите пароль: ");
-            string password = Console.ReadLine();
-
-            using (MySqlConnection connection = new MySqlConnection(connectionString))
+            try
             {
-                connection.Open();
+                Console.WriteLine("Метод регистрации пользователя.");
 
-                string checkUserQuery = "SELECT COUNT(*) FROM users WHERE username = @username";
-                using (MySqlCommand checkUserCommand = new MySqlCommand(checkUserQuery, connection))
+                Console.Write("Введите имя пользователя: ");
+                string username = Console.ReadLine();
+
+                Console.Write("Введите пароль: ");
+                string password = Console.ReadLine();
+
+                using (MySqlConnection connection = new MySqlConnection(connectionString))
                 {
-                    checkUserCommand.Parameters.AddWithValue("@username", username);
-                    int existingUserCount = Convert.ToInt32(checkUserCommand.ExecuteScalar());
+                    connection.Open();
 
-                    if (existingUserCount > 0)
+                    string checkUserQuery = "SELECT COUNT(*) FROM users WHERE username = @username";
+                    using (MySqlCommand checkUserCommand = new MySqlCommand(checkUserQuery, connection))
                     {
-                        Console.WriteLine("Пользователь с таким именем уже существует.");
-                        return;
+                        checkUserCommand.Parameters.AddWithValue("@username", username);
+                        int existingUserCount = Convert.ToInt32(checkUserCommand.ExecuteScalar());
+
+                        if (existingUserCount > 0)
+                        {
+                            Console.WriteLine("Пользователь с таким именем уже существует.");
+                            return;
+                        }
+                    }
+
+
+                    string insertUserQuery = "INSERT INTO users (username, password) VALUES (@username, @password)";
+                    using (MySqlCommand insertUserCommand = new MySqlCommand(insertUserQuery, connection))
+                    {
+                        insertUserCommand.Parameters.AddWithValue("@username", username);
+                        insertUserCommand.Parameters.AddWithValue("@password", password);
+                        insertUserCommand.ExecuteNonQuery();
+
+                        Console.WriteLine("Пользователь успешно зарегистрирован.");
                     }
                 }
-
-                string hashedPassword = HashPassword(password);
-
-                string insertUserQuery = "INSERT INTO users (username, password) VALUES (@username, @password)";
-                using (MySqlCommand insertUserCommand = new MySqlCommand(insertUserQuery, connection))
-                {
-                    insertUserCommand.Parameters.AddWithValue("@username", username);
-                    insertUserCommand.Parameters.AddWithValue("@password", hashedPassword);
-                    insertUserCommand.ExecuteNonQuery();
-
-                    Console.WriteLine("Пользователь успешно зарегистрирован.");
-                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Ошибка при регистрации пользователя: " + ex.Message);
             }
         }
+
 
         public void Login()
         {
@@ -124,9 +143,9 @@ namespace LogReader
                 using (MySqlCommand getPasswordCommand = new MySqlCommand(getPasswordQuery, connection))
                 {
                     getPasswordCommand.Parameters.AddWithValue("@username", username);
-                    string hashedPassword = getPasswordCommand.ExecuteScalar()?.ToString();
+                    string storedPassword = getPasswordCommand.ExecuteScalar()?.ToString();
 
-                    if (hashedPassword == HashPassword(password))
+                    if (password == storedPassword)
                     {
                         Console.WriteLine("Вход выполнен успешно.");
                     }
@@ -138,99 +157,128 @@ namespace LogReader
             }
         }
 
-        public class LogData
-        {
-            public int Id { get; set; }
-            public string Ip { get; set; }
-            public DateTime DateTime { get; set; }
-            public string Method { get; set; }
-            public string URL { get; set; }
-        }
+
+
 
         public void ExportToJson()
         {
-            Console.WriteLine("Метод экспорта данных в формате JSON.");
-
-            logFile = @"C:\Users\Logika\source\repos\ConsoleApp5\access.log";
-            jsonFilePath = @"C:\Data\exported_data.json";
-
-            List<LogData> logDataList = new List<LogData>();
-
-            using (StreamReader reader = new StreamReader(logFile))
+            try
             {
-                while (!reader.EndOfStream)
+                Console.WriteLine("Метод экспорта данных в формате JSON.");
+
+                logFile = @"C:\Users\Logika\source\repos\ConsoleApp5\access.log";
+                jsonFilePath = @"C:\Data\exported_data.json";
+
+                List<LogData> logDataList = new List<LogData>();
+
+                using (StreamReader reader = new StreamReader(logFile))
                 {
-                    string line = reader.ReadLine();
-                    string[] logData = line.Split(',');
-
-                    logDataList.Add(new LogData
+                    while (!reader.EndOfStream)
                     {
-                        Id = int.Parse(logData[0].Trim()),
-                        Ip = logData[1].Trim(),
-                        DateTime = DateTime.Parse(logData[2].Trim()),
-                        Method = logData[3].Trim(),
-                        URL = logData[4].Trim()
-                    });
+                        string line = reader.ReadLine();
+                        string[] logData = line.Split(',');
+
+                        logDataList.Add(new LogData
+                        {
+                            Id = int.Parse(logData[0].Trim()),
+                            Ip = logData[1].Trim(),
+                            DateTime = DateTime.Parse(logData[2].Trim()),
+                            Method = logData[3].Trim(),
+                            URL = logData[4].Trim()
+                        });
+                    }
                 }
-            }
 
-            string directoryPath = Path.GetDirectoryName(jsonFilePath);
-            if (!Directory.Exists(directoryPath))
+                string directoryPath = Path.GetDirectoryName(jsonFilePath);
+                if (!Directory.Exists(directoryPath))
+                {
+                    Directory.CreateDirectory(directoryPath);
+                }
+
+                string jsonData = JsonConvert.SerializeObject(logDataList, Formatting.Indented);
+                File.WriteAllText(jsonFilePath, jsonData);
+
+                Console.WriteLine("Данные экспортированы в файл JSON: " + jsonFilePath);
+
+                Console.WriteLine("Содержимое файла JSON:");
+                Console.WriteLine(jsonData);
+            }
+            catch (Exception ex)
             {
-                Directory.CreateDirectory(directoryPath);
+                Console.WriteLine("Ошибка при экспорте данных в JSON: " + ex.Message);
             }
-
-            string jsonData = JsonConvert.SerializeObject(logDataList, Formatting.Indented);
-            File.WriteAllText(jsonFilePath, jsonData);
-
-            Console.WriteLine("Данные экспортированы в файл JSON: " + jsonFilePath);
-
-            Console.WriteLine("Содержимое файла JSON:");
-            Console.WriteLine(jsonData);
         }
-
 
         public void ViewDataInDatabase()
         {
-            Console.WriteLine("Метод просмотра данных в БД.");
-
-            using (MySqlConnection connection = new MySqlConnection(connectionString))
+            try
             {
-                connection.Open();
+                Console.WriteLine("Метод просмотра данных в БД.");
 
-                string query = "SELECT * FROM access_log";
-
-                using (MySqlCommand command = new MySqlCommand(query, connection))
+                using (MySqlConnection connection = new MySqlConnection(connectionString))
                 {
-                    using (MySqlDataReader reader = command.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            int id = reader.GetInt32("id");
-                            string username = reader.GetString("Ip");
+                    connection.Open();
 
-                            Console.WriteLine($"ID: {id}, Name: {username}");
+                    string query = "SELECT * FROM access_log";
+
+                    using (MySqlCommand command = new MySqlCommand(query, connection))
+                    {
+                        using (MySqlDataReader reader = command.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                string ip = reader.GetString("Ip");
+                                string Method = reader.GetString("Method");
+                                string URL = reader.GetString("URL");
+                                string Data_Time = reader.GetString("Data_Time");
+
+                                Console.WriteLine($"ip:{ip}, Data_Time:{Data_Time},Method:{Method},URL:{URL} ");
+                            }
                         }
                     }
                 }
             }
-        }
-
-        private string HashPassword(string password)
-        {
-            using (var md5 = System.Security.Cryptography.MD5.Create())
+            catch (Exception ex)
             {
-                byte[] inputBytes = System.Text.Encoding.ASCII.GetBytes(password);
-                byte[] hashBytes = md5.ComputeHash(inputBytes);
-
-                string hashedPassword = BitConverter.ToString(hashBytes).Replace("-", string.Empty);
-                return hashedPassword;
+                Console.WriteLine("Ошибка при просмотре данных в БД: " + ex.Message);
             }
         }
 
-        private bool ValidateUser(string username, string password)
+        public void ViewDataByIP(string ipAddress)
         {
-            throw new NotImplementedException();
+            try
+            {
+                Console.WriteLine("Метод просмотра данных в БД с фильтром по IP.");
+
+                using (MySqlConnection connection = new MySqlConnection(connectionString))
+                {
+                    connection.Open();
+
+                    string query = "SELECT * FROM access_log WHERE Ip = @IpAddress";
+
+                    using (MySqlCommand command = new MySqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@IpAddress", ipAddress);
+
+                        using (MySqlDataReader reader = command.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                string ip = reader.GetString("Ip");
+                                string method = reader.GetString("Method");
+                                string URL = reader.GetString("URL");
+                                string dateTime = reader.GetString("Data_Time");
+
+                                Console.WriteLine($"IP: {ip}, Data_Time: {dateTime}, Method: {method}, URL: {URL}");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Ошибка при просмотре данных в БД с фильтром по IP: " + ex.Message);
+            }
         }
     }
 }
